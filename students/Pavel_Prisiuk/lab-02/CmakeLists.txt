@@ -1,0 +1,43 @@
+cmake_minimum_required(VERSION 3.21)
+
+# --- vcpkg toolchain ---
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "vcpkg toolchain file")
+else()
+    message(FATAL_ERROR "VCPKG_ROOT is not set. Please set the VCPKG_ROOT environment variable.")
+endif()
+
+project(SmartHomeLite VERSION 0.1 LANGUAGES CXX)
+# Стандарт C++
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
+# Находим зависимости, установленные через vcpkg
+find_package(Crow CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
+
+# --- Основной исполняемый файл (REST Сервер) ---
+add_executable(smart_home_server 
+    src/main.cpp
+    src/application/service/reading_service.cpp
+)
+
+# Подключаем папку src для удобных инклудов и линкуем Crow
+target_include_directories(smart_home_server PRIVATE src)
+target_link_libraries(smart_home_server PRIVATE Crow::Crow)
+
+
+# --- Юнит-тесты (Google Test) ---
+add_executable(smart_home_tests
+    tests/reading_service_test.cpp
+    src/application/service/reading_service.cpp
+)
+
+target_include_directories(smart_home_tests PRIVATE src)
+# Линкуем GTest, GMock (для моков портов) и основную функцию запуска тестов
+target_link_libraries(smart_home_tests PRIVATE GTest::gtest GTest::gtest_main GTest::gmock)
+
+# Интеграция с CTest (чтобы тесты отображались в VS Code/Visual Studio)
+include(GoogleTest)
+gtest_discover_tests(smart_home_tests)

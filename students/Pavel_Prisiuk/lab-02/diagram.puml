@@ -1,0 +1,66 @@
+@startuml Reading Service - Hexagonal Architecture
+
+!define DOMAIN_COLOR #E8F5E9
+!define APPLICATION_COLOR #E3F2FD
+!define INFRASTRUCTURE_COLOR #FFF9C4
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam rectangle {
+    BackgroundColor<<domain>> DOMAIN_COLOR
+    BorderColor<<domain>> #4CAF50
+    BackgroundColor<<application>> APPLICATION_COLOR
+    BorderColor<<application>> #2196F3
+    BackgroundColor<<infrastructure>> INFRASTRUCTURE_COLOR
+    BorderColor<<infrastructure>> #FFC107
+}
+
+title Гексагональная архитектура: Reading Service (Умный дом lite)
+
+package "Infrastructure Layer (Внешний мир)" <<infrastructure>> {
+    rectangle "Inbound Adapters" as InAdapters {
+        component "ReadingController\n(Crow REST API)" as Controller
+    }
+    
+    rectangle "Outbound Adapters" as OutAdapters {
+        component "InMemoryReadingRepository\n(STL Vector)" as InMemRepo
+        component "MockNotificationService\n(Console Log)" as MockTG
+    }
+    
+    component "DependencyContainer\n(DI Config)" as DI
+}
+
+package "Application Layer (Логика и Порты)" <<application>> {
+    rectangle "Inbound Ports" as InPorts {
+        interface "RegisterReadingUseCase" as RegisterUC
+    }
+    
+    rectangle "Outbound Ports" as OutPorts {
+        interface "ReadingRepository" as RepoPort
+        interface "NotificationService" as NotiPort
+    }
+    
+    component "ReadingService\n(Orchestrator)" as ReadingSvc
+}
+
+package "Domain Layer (Ядро)" <<domain>> {
+    component "Reading\n(Value Object)" as Reading
+}
+
+' Направления вызовов
+Controller --> RegisterUC : <<uses>>
+InMemRepo ..|> RepoPort : <<implements>>
+MockTG ..|> NotiPort : <<implements>>
+
+ReadingSvc ..|> RegisterUC : <<implements>>
+ReadingSvc --> RepoPort : <<depends on>>
+ReadingSvc --> NotiPort : <<depends on>>
+
+ReadingSvc --> Reading : <<uses>>
+
+' Настройка DI
+DI ..> Controller : <<creates>>
+DI ..> ReadingSvc : <<creates>>
+DI ..> InMemRepo : <<creates>>
+
+@enduml
