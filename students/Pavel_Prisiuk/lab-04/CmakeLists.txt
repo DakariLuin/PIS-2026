@@ -1,0 +1,55 @@
+cmake_minimum_required(VERSION 3.21)
+
+# --- vcpkg toolchain ---
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "vcpkg toolchain file")
+else()
+    message(FATAL_ERROR "VCPKG_ROOT is not set. Please set the VCPKG_ROOT environment variable.")
+endif()
+
+project(SmartHomeLite VERSION 0.1 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
+find_package(Crow CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
+
+# --- Исходники ---
+# Добавляем файл реализации фасада ReadingServiceImpl
+set(COMMON_SOURCES
+    src/application/service/reading_service_impl.cpp
+)
+
+# --- Основной исполняемый файл (REST Сервер) ---
+add_executable(smart_home_server 
+    src/main.cpp
+    ${COMMON_SOURCES}
+)
+
+target_include_directories(smart_home_server PRIVATE src)
+target_link_libraries(smart_home_server PRIVATE Crow::Crow)
+
+if(WIN32)
+    target_link_libraries(smart_home_server PRIVATE ws2_32 mswsock)
+endif()
+
+
+# --- Юнит-тесты (Google Test) ---
+add_executable(smart_home_tests
+    tests/reading_service_test.cpp
+    tests/test_sensor.cpp
+    tests/test_register_handler.cpp 
+    ${COMMON_SOURCES}
+)
+
+target_include_directories(smart_home_tests PRIVATE src)
+target_link_libraries(smart_home_tests PRIVATE GTest::gtest GTest::gtest_main GTest::gmock)
+
+if(WIN32)
+    target_link_libraries(smart_home_tests PRIVATE ws2_32 mswsock)
+endif()
+
+include(GoogleTest)
+gtest_discover_tests(smart_home_tests)
