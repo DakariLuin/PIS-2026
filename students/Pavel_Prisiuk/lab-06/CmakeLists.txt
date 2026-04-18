@@ -1,0 +1,72 @@
+cmake_minimum_required(VERSION 3.21)
+
+# 1. vcpkg только для Crow
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+endif()
+
+project(SmartHomeLite LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+# 2. Пути к MSYS2
+set(MSYS_BASE "C:/msys64/mingw64")
+set(MSYS_INC "${MSYS_BASE}/include")
+set(MSYS_LIB_DIR "${MSYS_BASE}/lib")
+
+# 3. Ищем Crow через vcpkg (он только в заголовках, проблем не будет)
+find_package(Crow CONFIG REQUIRED)
+
+# 4. Явно прописываем пути к файлам библиотек из MSYS2 (.dll.a лучше для MinGW)
+set(LIB_PQXX "${MSYS_LIB_DIR}/libpqxx.dll.a")
+set(LIB_PQ "${MSYS_LIB_DIR}/libpq.dll.a")
+set(LIB_GTEST "${MSYS_LIB_DIR}/libgtest.dll.a")
+set(LIB_GTEST_MAIN "${MSYS_LIB_DIR}/libgtest_main.dll.a")
+set(LIB_GMOCK "${MSYS_LIB_DIR}/libgmock.dll.a")
+
+set(COMMON_SOURCES src/application/service/reading_service_impl.cpp)
+
+# --- 5. СЕРВЕР ---
+add_executable(smart_home_server src/main.cpp ${COMMON_SOURCES})
+# BEFORE гарантирует, что мы не возьмем заголовки pqxx из vcpkg случайно
+target_include_directories(smart_home_server BEFORE PRIVATE src ${MSYS_INC})
+target_compile_definitions(smart_home_server PRIVATE PQXX_SHARED)
+target_link_libraries(smart_home_server PRIVATE 
+    Crow::Crow 
+    ${LIB_PQXX} ${LIB_PQ}
+    ws2_32 mswsock advapi32 secur32 crypt32
+)
+
+# --- 6. UNIT ТЕСТЫ ---
+add_executable(smart_home_tests
+    tests/unit/test_sensor.cpp
+    tests/unit/test_register_handler.cpp
+    tests/unit/reading_service_test.cpp
+    ${COMMON_SOURCES}
+)
+# ПРИНУДИТЕЛЬНО используем заголовки MSYS2 для GTest
+target_include_directories(smart_home_tests BEFORE PRIVATE src ${MSYS_INC})
+target_link_libraries(smart_home_tests PRIVATE 
+    ${LIB_GMOCK}
+    ${LIB_GTEST}
+    ${LIB_GTEST_MAIN}
+    ws2_32 advapi32
+)
+
+# --- 7. INTEGRATION ТЕСТЫ ---
+add_executable(smart_home_integration_tests
+    tests/integration/test_postgres_integration.cpp
+    ${COMMON_SOURCES}
+)
+target_include_directories(smart_home_integration_tests BEFORE PRIVATE src ${MSYS_INC})
+target_compile_definitions(smart_home_integration_tests PRIVATE PQXX_SHARED)
+target_link_libraries(smart_home_integration_tests PRIVATE 
+    ${LIB_GTEST}
+    ${LIB_GTEST_MAIN}
+    ${LIB_PQXX}
+    ${LIB_PQ}
+    ws2_32 mswsock advapi32 secur32 crypt32
+)
+
+include(GoogleTest)
+gtest_discover_tests(smart_home_tests)
+gtest_discover_tests(smart_home_integration_tests)
