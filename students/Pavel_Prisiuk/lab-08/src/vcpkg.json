@@ -1,0 +1,10 @@
+{
+    "dependencies": [
+        "crow",
+        "gtest",
+        "libpqxx",
+        "simpleamqpclient",
+        "grpc",
+        "protobuf"
+    ]
+}
