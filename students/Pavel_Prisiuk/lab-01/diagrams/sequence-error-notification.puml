@@ -1,0 +1,83 @@
+@startuml
+title Сценарий с ошибкой: Сбой уведомления и Retry
+
+skinparam Style strictuml
+
+actor "Датчик (Sensor)" as Sensor
+participant "API Gateway" as Gateway
+participant "Processing Service" as ProcSvc
+database "PostgreSQL" as DB
+queue "Event Bus" as Bus
+participant "Notification Worker" as Worker
+participant "Telegram API" as TG
+
+== Регистрация критического показания ==
+
+Sensor -> Gateway: POST /api/v1/readings\n{sensor_id: "T-101", value: 35.0}
+activate Gateway
+Gateway -> ProcSvc: Пересылка
+activate ProcSvc
+
+ProcSvc -> DB: BEGIN TRANSACTION
+activate DB
+ProcSvc -> DB: INSERT INTO readings...
+DB --> ProcSvc: OK
+ProcSvc -> DB: COMMIT TRANSACTION
+DB --> ProcSvc: Committed
+deactivate DB
+
+note over ProcSvc #FFAAAA: 35.0 > 30.0! ТРЕБУЕТСЯ АЛЕРТ
+
+ProcSvc -> Bus: publish(AlertTriggered)
+activate Bus
+Bus --> ProcSvc: ACK
+deactivate Bus
+
+ProcSvc --> Gateway: 201 Created
+deactivate ProcSvc
+Gateway --> Sensor: 201 Created
+deactivate Gateway
+
+== Асинхронная обработка (Сбой) ==
+
+Bus -> Worker: consume(AlertTriggered)
+activate Worker
+
+Worker -> TG: sendMessage("Критический перегрев!")
+activate TG
+note over TG #FFAAAA: Connection Timeout (Service Down)
+TG --x Worker: Error / Timeout
+deactivate TG
+
+note over Worker: Стратегия: Сохранить в очередь на повтор
+
+Worker -> DB: INSERT INTO notification_retry\n(alert_id, status='pending', next_run=NOW()+1m)
+activate DB
+DB --> Worker: OK
+deactivate DB
+deactivate Worker
+
+== Повторная попытка (через 1 минуту) ==
+
+... 1 минута спустя ...
+
+note over Worker: Фоновый процесс (Scheduler)\nзапускает попытку повторно
+
+Worker -> DB: SELECT * FROM notification_retry WHERE status='pending'
+activate Worker
+activate DB
+DB --> Worker: 1 запись найденa
+deactivate DB
+
+Worker -> TG: sendMessage("Критический перегрев!")
+activate TG
+TG --> Worker: 200 OK
+deactivate TG
+
+Worker -> DB: UPDATE notification_retry SET status='sent'
+activate DB
+DB --> Worker: OK
+deactivate DB
+deactivate Worker
+
+@enduml

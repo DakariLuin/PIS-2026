@@ -1,0 +1,62 @@
+@startuml
+title Успешный сценарий: Регистрация показаний датчика (без алерта)
+
+actor "Датчик (Sensor)" as Sensor
+participant "API Gateway" as Gateway
+participant "Processing Service" as ProcSvc
+participant "Cache (Redis)" as Cache
+database "TSDB (PostgreSQL)" as DB
+queue "Event Bus" as Bus
+
+== Прием и валидация данных ==
+
+Sensor -> Gateway: POST /api/v1/readings\n{sensor_id: "T-101", value: 24.5,\ntimestamp: 1709635200}
+activate Gateway
+
+Gateway -> Gateway: Проверка API-ключа\nи подписи запроса
+Gateway -> ProcSvc: Пересылка данных
+activate ProcSvc
+
+ProcSvc -> ProcSvc: Валидация диапазона\n(температура в [-50..100])
+
+== Транзакция №1: Сохранение показания ==
+
+ProcSvc -> DB: BEGIN TRANSACTION
+activate DB
+
+ProcSvc -> DB: INSERT INTO sensor_readings\n(sensor_id, value, ts)\nVALUES ('T-101', 24.5, ...)
+DB --> ProcSvc: OK (Saved)
+
+ProcSvc -> DB: COMMIT TRANSACTION
+DB --> ProcSvc: Committed
+deactivate DB
+
+== Проверка пороговых значений (Alert Logic) ==
+
+ProcSvc -> Cache: GET thresholds:T-101
+activate Cache
+Cache --> ProcSvc: {max: 30.0, min: 15.0}
+deactivate Cache
+
+note over ProcSvc
+  Сравнение: 24.5 < 30.0
+  Алерт не требуется
+end note
+
+ProcSvc -> Bus: publish(ReadingRegistered,\nsensor_id='T-101', val=24.5)
+activate Bus
+Bus --> ProcSvc: ACK
+deactivate Bus
+
+ProcSvc --> Gateway: 201 Created\n{status: "success"}
+deactivate ProcSvc
+
+Gateway --> Sensor: 201 Created
+deactivate Gateway
+
+note right of Sensor
+  Датчик засыпает до 
+  следующего интервала
+end note
+
+@enduml
