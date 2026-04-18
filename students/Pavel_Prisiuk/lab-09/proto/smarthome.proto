@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package smarthome;
+
+// Текущее состояние датчика
+message SensorStatusRequest {
+  string sensor_id = 1;
+}
+
+message SensorStatusResponse {
+  string id = 1;
+  bool is_active = 2;
+  string status_msg = 3;
+}
+
+// Поток данных (Streaming)
+message StreamRequest {
+  string sensor_id = 1;
+}
+
+message ReadingUpdate {
+  string sensor_id = 1;
+  double value = 2;
+}
+
+service SmartHomeService {
+  // Unary RPC (Замена REST GET)
+  rpc GetSensorStatus(SensorStatusRequest) returns (SensorStatusResponse);
+
+  // Server-side Streaming (Real-time поток данных)
+  rpc StreamReadings(StreamRequest) returns (stream ReadingUpdate);
+}

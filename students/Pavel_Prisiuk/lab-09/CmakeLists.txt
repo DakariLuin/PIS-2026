@@ -1,0 +1,101 @@
+cmake_minimum_required(VERSION 3.21)
+
+# 1. Сначала vcpkg (для Crow и GTest)
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+endif()
+
+project(SmartHomeLite LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+# 2. Настраиваем пути MSYS2 (Здесь лежат gRPC, Protobuf, Postgres и теперь RabbitMQ)
+set(MSYS_PATH "C:/msys64/mingw64")
+list(APPEND CMAKE_PREFIX_PATH "${MSYS_PATH}")
+include_directories(BEFORE src "${MSYS_PATH}/include")
+link_directories("${MSYS_PATH}/lib")
+
+# 3. Ищем зависимости
+find_package(Crow CONFIG REQUIRED)      # Из vcpkg
+find_package(protobuf CONFIG REQUIRED)  # Из MSYS2
+find_package(gRPC REQUIRED)             # Из MSYS2
+find_package(PostgreSQL REQUIRED)       # Из MSYS2
+find_package(GTest CONFIG REQUIRED)     # Из vcpkg
+
+# Находим библиотеку RabbitMQ (ищет и в vcpkg, и в MSYS2)
+find_library(RABBITMQ_LIB NAMES rabbitmq rabbitmq-c REQUIRED)
+
+# 4. Генерация кода (gRPC + Protobuf)
+set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY ${GEN_DIR})
+
+find_program(PROTOC_BIN protoc PATHS "${MSYS_PATH}/bin" REQUIRED)
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin PATHS "${MSYS_PATH}/bin" REQUIRED)
+
+add_custom_command(
+    OUTPUT "${GEN_DIR}/smarthome.pb.cc" "${GEN_DIR}/smarthome.pb.h"
+           "${GEN_DIR}/smarthome.grpc.pb.cc" "${GEN_DIR}/smarthome.grpc.pb.h"
+    COMMAND ${PROTOC_BIN}
+    ARGS --cpp_out=${GEN_DIR} --grpc_out=${GEN_DIR}
+         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
+         -I${CMAKE_CURRENT_SOURCE_DIR}/proto smarthome.proto
+    DEPENDS proto/smarthome.proto
+)
+
+# Общие исходники
+set(COMMON_SOURCES src/application/service/reading_service_impl.cpp)
+
+# ==========================================
+# --- ОСНОВНОЙ СЕРВЕР ---
+# ==========================================
+add_executable(smart_home_server 
+    src/main.cpp 
+    ${COMMON_SOURCES} 
+    "${GEN_DIR}/smarthome.pb.cc" 
+    "${GEN_DIR}/smarthome.grpc.pb.cc"
+)
+target_include_directories(smart_home_server PRIVATE src ${GEN_DIR})
+
+target_link_libraries(smart_home_server PRIVATE 
+    Crow::Crow 
+    gRPC::grpc++ 
+    protobuf::libprotobuf
+    pqxx pq PostgreSQL::PostgreSQL
+    ${RABBITMQ_LIB}
+    ws2_32 mswsock advapi32 secur32 crypt32
+)
+
+# ==========================================
+# --- ТЕСТЫ ---
+# ==========================================
+enable_testing()
+
+# 1. Юнит-тесты
+add_executable(unit_tests
+    tests/unit/test_sensor.cpp
+    tests/unit/test_register_handler.cpp
+    tests/unit/reading_service_test.cpp
+    ${COMMON_SOURCES}
+)
+target_include_directories(unit_tests PRIVATE src)
+target_link_libraries(unit_tests PRIVATE
+    GTest::gtest_main 
+    GTest::gmock_main
+    pqxx pq PostgreSQL::PostgreSQL
+    ${RABBITMQ_LIB}
+    ws2_32 mswsock advapi32 secur32 crypt32
+)
+
+# 2. Интеграционные тесты
+add_executable(integration_tests
+    tests/integration/test_postgres_integration.cpp
+)
+target_include_directories(integration_tests PRIVATE src)
+target_link_libraries(integration_tests PRIVATE
+    GTest::gtest_main
+    pqxx pq PostgreSQL::PostgreSQL
+    ws2_32 mswsock advapi32 secur32 crypt32
+)
+
+# Регистрация
+add_test(NAME UnitTests COMMAND unit_tests)
+add_test(NAME IntegrationTests COMMAND integration_tests)
