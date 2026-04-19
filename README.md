@@ -166,6 +166,9 @@ git log --show-signature -1
 
 <!-- STUDENTS_TABLE_START -->
 
+| Вариант | Group | № | sub | Name | NameLatin | Directory | Github Username | #1 | #2 | #3 | #4 | #5 | #6 | #7 | #8 | #9 | Rating |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
 <!-- STUDENTS_TABLE_END -->
 
 <style>
